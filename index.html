@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Amazon Selection Workflow — 亚马逊选品研究</title>
+<meta name="description" content="Amazon US / FBA product-selection workflow reverse-engineered from the public RexiFlow demo on 2026-11-25. No live data connection. Data honesty gate: no data, no ranking.">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;color:#1a1a1a;background:#f6f7f9;line-height:1.6}
+header{background:#0f2a44;color:#fff;padding:28px 18px}header h1{margin:0 0 6px;font-size:24px}header p{margin:4px 0;opacity:.9}header .tag{display:inline-block;background:#ffb703;color:#111;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700}
+main{max-width:980px;margin:0 auto;padding:18px 14px 60px}
+.card{background:#fff;border:1px solid #e2e5ea;border-radius:10px;padding:18px;margin:16px 0}
+h2{font-size:20px;margin:0 0 8px}h3{font-size:16px;margin:18px 0 8px}
+label{display:block;font-size:13px;font-weight:600;margin:10px 0 4px}
+input,select,textarea{width:100%;padding:9px 10px;border:1px solid #c9ced6;border-radius:6px;font-size:14px;background:#fff}
+input[type=checkbox]{width:auto}textarea{min-height:70px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+@media(max-width:640px){.grid{grid-template-columns:1fr}}
+button{cursor:pointer;border:0;border-radius:6px;padding:10px 16px;font-size:14px;font-weight:700;background:#0f2a44;color:#fff;margin:6px 6px 6px 0}
+button.secondary{background:#e8ecf1;color:#111}button.warn{background:#b3261e;color:#fff}button:disabled{opacity:.5;cursor:not-allowed}
+.steps{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.step-pill{padding:6px 10px;border-radius:20px;background:#e8ecf1;font-size:13px}.step-pill.active{background:#0f2a44;color:#fff}
+.warnbox{background:#fff3cd;border:1px solid #e6c200;border-radius:8px;padding:12px;margin:12px 0}
+.dangerbox{background:#fdecea;border:1px solid #d93025;border-radius:8px;padding:12px;margin:12px 0}
+.okbox{background:#e6f4ea;border:1px solid #34a853;border-radius:8px;padding:12px;margin:12px 0}
+.muted{color:#666;font-size:13px}.small{font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}th,td{border:1px solid #ddd;padding:6px;text-align:left;vertical-align:top}th{background:#f0f2f5}
+table input{padding:5px;font-size:13px}.tablewrap{overflow-x:auto}
+.badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:12px;font-weight:700}.b-pass{background:#e6f4ea;color:#137333}.b-fail{background:#fdecea;color:#a50e0e}.b-unknown{background:#fef7e0;color:#7a5a00}.b-mid{background:#e8f0fe;color:#174ea6}
+footer{max-width:980px;margin:0 auto;padding:20px 14px 40px;color:#666;font-size:13px}
+.kwchip{display:inline-block;background:#e8f0fe;border-radius:14px;padding:3px 9px;margin:3px;font-size:13px}
+pre{white-space:pre-wrap;word-wrap:break-word;background:#f6f7f9;padding:12px;border-radius:8px;font-size:13px}
+@media print{header .noprint,button{display:none!important}.card{border:1px solid #999;break-inside:avoid}}
+</style>
+</head>
+<body>
+<header>
+<h1>Amazon Selection Workflow <span class="tag">亚马逊选品研究</span></h1>
+<p>Amazon US（美国站） · FBA · New Store（新店） · 流程复刻自 2026-11-25 公开实测</p>
+<p class="small">Discovery → Six-dimension filter → Trend + Profit → Report. No live data. No invented numbers.</p>
+</header>
+<main>
+<div class="steps" id="stepPills">
+<span class="step-pill" data-step="0">0 店铺背景 Store Profile</span>
+<span class="step-pill" data-step="1">1 发现 Discovery</span>
+<span class="step-pill" data-step="2">2 六维初筛 Filter</span>
+<span class="step-pill" data-step="3">3 趋势+利润 Trend &amp; Profit</span>
+<span class="step-pill" data-step="4">4 报告 Report</span>
+</div>
+
+<section class="card" id="honesty">
+<h2>⚠️ 先看这页：RexiFlow 原站哪里出了问题 <span class="muted">What RexiFlow got wrong</span></h2>
+<p><b>中文：</b>2026-11-25 登录后实测，用 <code>insulated water bottle</code> 跑了 3 轮、约 5 分钟，报告出了，但底层数据是空的：</p>
+<ul>
+<li>产品搜索 8 次，<b>0 结果</b>（连 water bottle 都搜不到）；商品详情 3 次失败；评论 0 条；关键词反查 0 个。</li>
+<li>趋势数字疑似占位：7 个词平均搜索量全在 <b>101,261–101,284</b>，峰值全恰好是 <b>202,611</b>。</li>
+<li>首页宣称的 Opportunity Score +34%、12 个风险信号、6 步流程，在实测流程里<b>一次都没出现</b>。</li>
+<li>定价页是通用 SaaS 模板残留，两路看到的价格都不一样，不能当定价。</li>
+</ul>
+<p><b>English:</b> In the 2026-11-25 logged-in run, the report was generated while the underlying data was empty: 8 product searches returned 0 results, 0 reviews, and trend numbers were near-identical across keywords. Opportunity Score +34% and 12 risk signals never appeared in the real flow.</p>
+<p><b>本站的修正（fix）：</b>数据门禁（Data Gate）。任何一个维度没填真实数据，该维度就是“未知（unknown）”，候选词标“数据不足（insufficient data）”，<b>不通过、不排名</b>。全部空白时直接拦截，不出排名。趋势、销量、利润数字一律由你从 SellerSprite / Keepa / Amazon 填入或 CSV 导入，本站不编数、不接任何实时接口。</p>
+<p class="muted">完整实测记录：workspace/research/rexiflow-selection-reverse-engineering.md（原逆向报告）。</p>
+</section>
+
+<section class="card" id="step0">
+<h2>Step 0 — 店铺背景 Store Profile</h2>
+<p class="muted">字段与 RexiFlow /research/store-profile 相同。保存到本机 localStorage，可复用、可改，不上传服务器。</p>
+<div class="grid">
+<div><label>目标市场 Target Market</label><select id="pf_market"><option>United States（美国）</option><option>Canada（加拿大）</option><option>United Kingdom（英国）</option><option>Germany（德国）</option></select></div>
+<div><label>关注类目 Category</label><select id="pf_category"><option>All Categories（全部类目）</option><option>Home &amp; Kitchen（家居厨房）</option><option>Sports &amp; Outdoors（运动户外）</option><option>Pet Supplies（宠物）</option><option>Office Products（办公）</option><option>Beauty &amp; Personal Care（美妆个护）</option></select></div>
+<div><label>价格带 Price Band（示例 20-60）</label><input id="pf_priceband" value="20-60"></div>
+<div><label>目标毛利率 Target Gross Margin（示例 35%-45%）</label><input id="pf_margin" value="35%-45%"></div>
+<div><label>销量区间 Monthly Sales（示例 月销 300-2000）</label><input id="pf_sales" value="300-2000"></div>
+<div><label>搜索量 Monthly Search Volume（示例 1000-10000）</label><input id="pf_search" value="1000-10000"></div>
+<div><label>评论量区间 Reviews（示例 50-800 条）</label><input id="pf_reviews" value="50-800"></div>
+<div><label>店铺模式 Fulfillment</label><select id="pf_mode"><option>FBA (Fulfillment by Amazon)</option><option>FBM</option></select></div>
+<div><label>店铺级别 Store Level</label><select id="pf_level"><option>New Store（新店）</option><option>Established（老店）</option></select></div>
+<div><label>目标客群 Target Audience（示例：有收纳痛点的美国家庭、宠物主、办公室采购）</label><input id="pf_audience" value="有收纳痛点的美国家庭、宠物主、办公室采购"></div>
+<div><label>供应链优势 Supply-chain Advantages（示例：玻璃、金属、小家电装配、包装设计）</label><input id="pf_supply" value="玻璃、金属、小家电装配、包装设计"></div>
+<div><label>约束条件 Constraints（避开带电、液体、强认证、侵权和高退货率品类）</label><input id="pf_constraints" value="避开带电、液体、强认证、侵权和高退货率品类"></div>
+</div>
+<label>补充说明 Notes（阶段性策略、资金约束、包装偏好或团队能力边界）</label>
+<textarea id="pf_notes"></textarea>
+<button onclick="saveProfile()">保存店铺背景 Save Profile</button>
+<button class="secondary" onclick="loadProfile()">恢复已保存 Restore</button>
+<span id="pfMsg" class="small"></span>
+</section>
+
+<section class="card" id="newResearch">
+<h2>新建选品研究 Create Research <span class="muted">（对应原站 /research/new）</span></h2>
+<label>名称 Name（必填 required）</label>
+<input id="researchName" placeholder="例如：US 家居选品研究">
+<label>研究入口 Research Entry</label>
+<select id="researchEntry"><option>描述 Description</option></select>
+<label>描述 Description — 输入类目、需求词或产品方向</label>
+<textarea id="researchDesc" placeholder="例如：美国站，保温水杯，带手柄差异化，价格带 20-60 美元"></textarea>
+<p class="muted">下面 Step 1 也可以直接从一个关键词开始，两条入口都可以，数据会进同一个流程。</p>
+</section>
+
+<section class="card" id="step1">
+<h2>Step 1 — 发现 Discovery <span class="muted">discover_keywords</span></h2>
+<p>从一个关键词和少量条件开始。系统先扩词，再生成轻量研究报告；确认后可以继续深入研究。原站说明原文如此。</p>
+<label>关键词 Keyword（必填）</label>
+<input id="kwInput" placeholder="例如：insulated water bottle">
+<label>目标站点 Target Site</label>
+<select id="kwSite"><option>United States（美国）</option></select>
+<label>研究模式 Research Mode</label>
+<select id="kwMode"><option>选品研究 Product Selection (default)</option><option>关键词研究 Keyword Research</option><option>竞品分析 Competitor Analysis</option><option>市场趋势 Market Trend</option><option>Review 分析 Review Analysis</option></select>
+<button onclick="discover()">发现 20 个候选词 Discover 20 Candidates</button>
+<button class="secondary" onclick="loadDemoExample()">一键加载演示示例 Load RexiFlow demo example: insulated water bottle</button>
+<p class="muted">扩词是<b>规则扩词（rule-based expansion），不是搜索量数据</b>。词表透明，见下方分组；没有接 SellerSprite / Keepa / Amazon，搜不到真实搜索量。</p>
+<div id="discoverOut"></div>
+</section>
+
+<section class="card" id="step2">
+<h2>Step 2 — 六维初筛 Six-Dimension Filter <span class="muted">filter_candidates</span></h2>
+<p>六维：价格带、销量范围、评论门槛、类目匹配、利润估算、趋势验证。先确认参数，再逐词填真实数据。</p>
+<div class="grid">
+<div><label>最低售价 Min Price $</label><input id="f_minPrice" type="number" step="0.01" value="9.99"></div>
+<div><label>最高售价 Max Price $</label><input id="f_maxPrice" type="number" step="0.01" value="39.99"></div>
+<div><label>最低月销量 Min Monthly Sales</label><input id="f_minSales" type="number" value="300"></div>
+<div><label>最高评论数 Max Reviews</label><input id="f_maxReviews" type="number" value="1000"></div>
+<div><label>最低评分 Min Rating</label><input id="f_minRating" type="number" step="0.1" value="4.0"></div>
+<div><label>最低利润率 Min Profit Margin %</label><input id="f_minMargin" type="number" step="0.1" value="25"></div>
+</div>
+<p>
+<button class="secondary" onclick="downloadTemplate()">下载 CSV 模板 Download CSV Template</button>
+<button class="secondary" onclick="document.getElementById('csvFile').click()">导入 CSV Import CSV</button>
+<input type="file" id="csvFile" accept=".csv" style="display:none" onchange="importCSV(event)">
+<button class="secondary" onclick="fillDemoData()">填入演示数据 Fill demo data (2026-11-25 snapshot)</button>
+</p>
+<p class="muted">CSV 列：keyword, price, monthly_sales, rating, reviews, profit_margin_pct, trend_avg_search, trend_latest, trend_peak, data_points。演示数据标注来源为 2026-11-25 实测报告快照，其中趋势数字在原站即疑似占位，仅作格式演示，不是真实搜索量。</p>
+<div id="filterGate"></div>
+<div class="tablewrap"><table id="candTable"><thead><tr><th>候选词 Candidate</th><th>分组 Group</th><th>匹配 Match</th><th>售价 $</th><th>月销量</th><th>评分</th><th>评论数</th><th>利润率 %</th><th>趋势均值</th><th>趋势最新</th><th>峰值</th><th>数据点</th><th>结果</th></tr></thead><tbody></tbody></table></div>
+<button onclick="runFilter()">运行六维初筛 Run Filter</button>
+<div id="filterOut"></div>
+<div id="selectPanel"></div>
+</section>
+
+<section class="card" id="step3">
+<h2>Step 3 — 趋势验证 + 利润 + 竞品 Trend, Profit &amp; Competitors</h2>
+<p class="muted">verify_candidate_trends · search_products_by_keyword · estimate_profit · fetch_product_detail · fetch_reviews · lookup_product_keywords · analyze_competitors — 原站工具名。 本站不调任何外部接口，数据全部由你填入；搜不到产品时要如实标空，不要编。</p>
+<h3>趋势表 Trend Verification</h3>
+<p class="muted">趋势字段全部空白 / “—”，除非你在 Step 2 填过或导入过。原站 2026-11-25 的 7 个词峰值全是 202,611，已在首页诚信面板指出，演示数据里保留原数并标注疑似占位。</p>
+<div class="tablewrap"><table id="trendTable"><thead><tr><th>候选词</th><th>趋势平均搜索量 Avg Search</th><th>最新趋势 Latest</th><th>峰值 Peak</th><th>数据点 Data Points</th><th>状态</th></tr></thead><tbody></tbody></table></div>
+<h3>利润测算 Profit Estimate</h3>
+<p>公式：净利 Net Profit = 售价 Price − 产品成本 Product Cost − FBA 费 FBA Fee − 售价 × 佣金比例 Referral %；利润率 Margin = 净利 / 售价；盈亏平衡价 Break-even = 产品成本 + FBA 费 + 售价 × 佣金比例。</p>
+<p class="muted">未计入广告费、退货处理费、仓储超量费；实际运营净利润率通常 25%-35%（原站报告注）。</p>
+<button class="secondary" onclick="fillDemoProfit()">填入演示利润成本 Fill demo profit costs</button>
+<div class="tablewrap"><table id="profitTable"><thead><tr><th>候选词</th><th>售价 $</th><th>产品成本 $</th><th>FBA 费 $</th><th>佣金 %</th><th>净利 $</th><th>利润率 %</th><th>盈亏平衡 $</th><th>状态</th></tr></thead><tbody></tbody></table></div>
+<h3>竞争格局与风险 Competition &amp; Risk</h3>
+<p class="muted">原站报告中出现的竞品池 ASIN（详情拉取失败，未验证）：B08HDJ2K2L、B0B8KJFLX5、B07T1S4V8D、B0000UZQ0E、B08D3Y6Z8J。不要把它们当作已核实的竞品数据。</p>
+<label><input type="checkbox" id="risk_conc"> 头部集中 Concentration：Hydro Flask / Stanley / Yeti 占大量份额</label>
+<label><input type="checkbox" id="risk_pricewar"> 价格战风险 Price war：低价白牌涌入</label>
+<label><input type="checkbox" id="risk_fba"> FBA 费用波动 FBA fee fluctuation</label>
+<label><input type="checkbox" id="risk_return"> 退货率 Returns：颜色偏差、保温性能不达标</label>
+<label>风险补充说明 Risk notes（自由文本）</label>
+<textarea id="riskNotes" placeholder="例如：带手柄款差异化明显，但头部品牌价格带压制；需核实保温时长实测数据。"></textarea>
+<button onclick="buildReport()">生成最终报告 Generate Final Report</button>
+</section>
+
+<section class="card" id="step4">
+<h2>Step 4 — 最终报告 Final Report</h2>
+<p class="muted">只对“趋势 + 利润都有数据”的候选排名。缺任一数据的进“数据不足 — 不推进（insufficient data — do not promote）”。排名规则（透明）：趋势最新值 ↓，再按利润率 ↓，再按数据点 ↓。结论分级：推进（趋势最新 ≥1.0 且利润率 ≥40%）、推荐（趋势最新 ≥0.8 且利润率 ≥35%）、观望（有数据但未达上述标准）、淘汰（本工具不自动淘汰，只标观望/数据不足，由你人工决定）。</p>
+<div id="reportOut"><p class="muted">还没有报告。先完成 Step 1–3，再点“生成最终报告”。</p></div>
+<p>
+<button onclick="copyReport()">复制报告 Copy Report</button>
+<button class="secondary" onclick="window.print()">打印 / 存为 PDF Print / Save as PDF</button>
+<button class="secondary" onclick="downloadMarkdown()">下载 Markdown Download .md</button>
+<button class="secondary" onclick="saveRun()">保存本次运行 Save Run</button>
+</p>
+<h3>下一步出口 Next Steps（未实现，仅作出口标注）</h3>
+<ul>
+<li>确认进入 Listing 生成阶段 — generate_listing_copy（未实现）</li>
+<li>补充竞品深度分析 — analyze_competitors 七维分析（未实现）</li>
+<li>利润精细测算 — 补充具体产品规格后重新估算（在 Step 3 手动改成本即可）</li>
+</ul>
+<h3>运行记录 Runs（本机 localStorage）</h3>
+<div id="runsOut"></div>
+<button class="secondary" onclick="clearRuns()">清空运行记录 Clear Runs</button>
+</section>
+</main>
+<footer>
+<p>Workflow reverse-engineered from the public RexiFlow demo on 2026-11-25. Not affiliated with RexiFlow, Amazon, Pangolinfo, SellerSprite or Keepa. No live data connection.</p>
+<p>流程复刻自 2026-11-25 公开实测的 RexiFlow 选品环节，与 RexiFlow、Amazon、Pangolinfo、SellerSprite、Keepa 均无关联。本站不接任何实时数据源，不承诺销量、排名或平台通过。数据由使用者自行填入并负责核实。</p>
+<p>MIT License. Source: index.html (single file, no backend, no API keys).</p>
+</footer>
+<script>
+"use strict";
+var LS_PROFILE="asw_profile", LS_RUNS="asw_runs";
+var candidates=[]; // {kw, group, match, price, sales, rating, reviews, margin, trendAvg, trendLatest, trendPeak, points, cost, fba, referral, selected, result, reason}
+var selected=[]; // array of kw
+var lastReportMd="";
+
+var DEMO20=[
+["insulated water bottle","核心品类 Core","高"],
+["stainless steel water bottle with handle","核心品类 Core","高"],
+["wide mouth stainless steel water bottles","核心品类 Core","中"],
+["thermos water","保温/材质 Material","中"],
+["thermos bottles","保温/材质 Material","中"],
+["metal insulated water bottle","保温/材质 Material","中"],
+["small insulated bottle","保温/材质 Material","中"],
+["big insulated water bottle","保温/材质 Material","中"],
+["gym water bottles","场景 Scene","中"],
+["tall water bottle","场景 Scene","中"],
+["metal straw water bottle","功能 Function","中"],
+["stainless steel water bottle no straw","功能 Function","中"],
+["flask bottle","功能 Function","中"],
+["botella termica frio y caliente","多语言/拼写变体 Multilingual / Spelling","低"],
+["pomo de agua termico","多语言/拼写变体 Multilingual / Spelling","低"],
+["botella de agua acero inoxidable","多语言/拼写变体 Multilingual / Spelling","低"],
+["water bottoe","多语言/拼写变体 Multilingual / Spelling","低"],
+["water bootle","多语言/拼写变体 Multilingual / Spelling","低"],
+["water bottle","核心品类 Core","中"],
+["termo gym","多语言/拼写变体 Multilingual / Spelling","低"]
+];
+// Demo snapshot data (2026-11-25 RexiFlow report). Trend numbers are the suspect placeholder values from that run — labelled as such in the UI.
+var DEMO_DATA={
+"water bottle":{price:24.99,sales:3200,rating:4.7,reviews:850,margin:43.5,trendAvg:101277,trendLatest:0.6,trendPeak:202611,points:18,cost:7.2,fba:3.17,referral:15},
+"thermos water":{price:19.99,sales:1800,rating:4.5,reviews:620,margin:38.0,trendAvg:101267,trendLatest:0.6,trendPeak:202611,points:38,cost:6.0,fba:2.8,referral:15},
+"metal insulated water bottle":{price:21.99,sales:2100,rating:4.6,reviews:700,margin:40.0,trendAvg:101263,trendLatest:0.96,trendPeak:202611,points:58,cost:6.5,fba:3.0,referral:15},
+"metal straw water bottle":{price:22.99,sales:1500,rating:4.4,reviews:540,margin:36.0,trendAvg:101273,trendLatest:0.97,trendPeak:202611,points:46,cost:7.0,fba:3.0,referral:15},
+"wide mouth stainless steel water bottles":{price:21.99,sales:2600,rating:4.6,reviews:780,margin:40.1,trendAvg:101284,trendLatest:0.91,trendPeak:202611,points:26,cost:6.9,fba:2.97,referral:15},
+"flask bottle":{price:16.99,sales:900,rating:4.3,reviews:320,margin:32.0,trendAvg:101269,trendLatest:0.82,trendPeak:202611,points:52,cost:5.5,fba:2.5,referral:15},
+"stainless steel water bottle with handle":{price:19.99,sales:2900,rating:4.8,reviews:810,margin:42.2,trendAvg:101261,trendLatest:1.07,trendPeak:202611,points:60,cost:5.8,fba:2.75,referral:15}
+};
+var DEMO7=["water bottle","thermos water","metal insulated water bottle","metal straw water bottle","wide mouth stainless steel water bottles","flask bottle","stainless steel water bottle with handle"];
+
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function num(v){if(v===""||v==null||isNaN(Number(v)))return null;return Number(v);}
+function fmt(v){return v==null?"—":v;}
+function setPill(n){document.querySelectorAll(".step-pill").forEach(function(p){p.classList.toggle("active",Number(p.dataset.step)===n);});}
+function saveProfile(){var p={market:$("pf_market").value,category:$("pf_category").value,priceband:$("pf_priceband").value,margin:$("pf_margin").value,sales:$("pf_sales").value,search:$("pf_search").value,reviews:$("pf_reviews").value,mode:$("pf_mode").value,level:$("pf_level").value,audience:$("pf_audience").value,supply:$("pf_supply").value,constraints:$("pf_constraints").value,notes:$("pf_notes").value};localStorage.setItem(LS_PROFILE,JSON.stringify(p));$("pfMsg").textContent="已保存到本机 Saved locally.";}
+function loadProfile(){try{var p=JSON.parse(localStorage.getItem(LS_PROFILE)||"null");if(!p){$("pfMsg").textContent="本机还没有保存的背景 No saved profile.";return;}$("pf_market").value=p.market||"United States（美国）";$("pf_category").value=p.category||"All Categories（全部类目）";$("pf_priceband").value=p.priceband||"";$("pf_margin").value=p.margin||"";$("pf_sales").value=p.sales||"";$("pf_search").value=p.search||"";$("pf_reviews").value=p.reviews||"";$("pf_mode").value=p.mode||"FBA (Fulfillment by Amazon)";$("pf_level").value=p.level||"New Store（新店）";$("pf_audience").value=p.audience||"";$("pf_supply").value=p.supply||"";$("pf_constraints").value=p.constraints||"";$("pf_notes").value=p.notes||"";$("pfMsg").textContent="已恢复 Restored.";}catch(e){$("pfMsg").textContent="读取失败："+e.message;}}
+function makeCand(kw,group,match){return {kw:kw,group:group,match:match,price:null,sales:null,rating:null,reviews:null,margin:null,trendAvg:null,trendLatest:null,trendPeak:null,points:null,cost:null,fba:null,referral:null,selected:false,result:"—",reason:""};}
+function genericExpand(seed){
+  var s=seed.trim().toLowerCase();if(!s)return [];
+  var base=s;
+  var list=[];
+  function add(kw,g,m){if(list.filter(function(x){return x[0]===kw;}).length===0)list.push([kw,g,m]);}
+  add(base,"核心品类 Core","高");
+  add("stainless steel "+base,"核心品类 Core","高");
+  add(base+" with handle","核心品类 Core","中");
+  add("wide mouth "+base+"s","核心品类 Core","中");
+  add("vacuum insulated "+base,"保温/材质 Material","中");
+  add("double wall "+base,"保温/材质 Material","中");
+  add("metal insulated "+base,"保温/材质 Material","中");
+  add("thermos "+base,"保温/材质 Material","中");
+  add("small "+base,"保温/材质 Material","中");
+  add("big "+base,"保温/材质 Material","中");
+  add("gym "+base+"s","场景 Scene","中");
+  add("tall "+base,"场景 Scene","中");
+  add(base+" for gym","场景 Scene","中");
+  add("metal straw "+base,"功能 Function","中");
+  add(base+" no straw","功能 Function","中");
+  add(base+" with straw","功能 Function","中");
+  add("flask "+base,"功能 Function","低");
+  // multilingual / spelling variants are only meaningful for the bottle demo; for other seeds use generic variants and label them
+  add(base+" bottle","多语言/拼写变体 Multilingual / Spelling","低");
+  add("good "+base+"s","多语言/拼写变体 Multilingual / Spelling","低");
+  add(base.replace(/\s+/g,""),"多语言/拼写变体 Multilingual / Spelling","低");
+  return list.slice(0,20);
+}
+function discover(){
+  var kw=$("kwInput").value.trim();if(!kw){alert("请先输入关键词 Please enter a keyword.");return;}
+  var name=$("researchName").value.trim();
+  var rows;
+  if(kw.toLowerCase()==="insulated water bottle"){rows=DEMO20.slice();}
+  else{rows=genericExpand(kw);}
+  // pad to 20 if generic produced fewer (it produces 20 by construction; keep safe)
+  candidates=rows.map(function(r){return makeCand(r[0],r[1],r[2]);});
+  selected=[];
+  var groups={};candidates.forEach(function(c){(groups[c.group]=groups[c.group]||[]).push(c);});
+  var html="<div class='okbox'>已发现 <b>"+candidates.length+" 个候选关键词</b>（discover_keywords）。规则扩词，不是搜索量数据。研究名称："+esc(name||kw+" 选品")+"，站点：美国 United States。</div>";
+  Object.keys(groups).forEach(function(g){html+="<h3>"+esc(g)+"（"+groups[g].length+"）</h3><p>"+groups[g].map(function(c){return "<span class='kwchip'>"+esc(c.kw)+"</span>";}).join("")+"</p>";});
+  html+="<p class='muted'>下一步：去 Step 2 确认六维参数，并为每个候选填真实数据（或导入 CSV）。空白数据 = 数据不足，不通过。</p>";
+  $("discoverOut").innerHTML=html;renderCandTable();renderTrendProfit();setPill(2);
+  document.getElementById("step2").scrollIntoView({behavior:"smooth"});
+}
+function loadDemoExample(){
+  $("kwInput").value="insulated water bottle";$("researchName").value="insulated water bottle 选品";discover();
+  $("discoverOut").innerHTML="<div class='okbox'><b>演示示例已加载：</b>insulated water bottle — 2026-11-25 RexiFlow 实测 run 的 20 个候选词（原文照录，含 water bottoe / water bootle 拼写错误词）。这只是词表，不是真实搜索量。</div>"+$("discoverOut").innerHTML;
+}
+function renderCandTable(){
+  var tb=document.querySelector("#candTable tbody");if(!tb)return;
+  tb.innerHTML=candidates.map(function(c,i){
+    return "<tr><td>"+esc(c.kw)+"</td><td>"+esc(c.group)+"</td><td>"+esc(c.match)+"</td>"+
+    "<td><input data-i='"+i+"' data-f='price' type='number' step='0.01' value='"+(c.price==null?"":c.price)+"' onchange='updCand(this)'></td>"+
+    "<td><input data-i='"+i+"' data-f='sales' type='number' value='"+(c.sales==null?"":c.sales)+"' onchange='updCand(this)'></td>"+
+    "<td><input data-i='"+i+"' data-f='rating' type='number' step='0.1' value='"+(c.rating==null?"":c.rating)+"' onchange='updCand(this)'></td>"+
+    "<td><input data-i='"+i+"' data-f='reviews' type='number' value='"+(c.reviews==null?"":c.reviews)+"' onchange='updCand(this)'></td>"+
+    "<td><input data-i='"+i+"' data-f='margin' type='number' step='0.1' value='"+(c.margin==null?"":c.margin)+"' onchange='updCand(this)'></td>"+
+    "<td><input data-i='"+i+"' data-f='trendAvg' type='number' value='"+(c.trendAvg==null?"":c.trendAvg)+"' onchange='updCand(this)'></td>"+
+    "<td><input data-i='"+i+"' data-f='trendLatest' type='number' step='0.01' value='"+(c.trendLatest==null?"":c.trendLatest)+"' onchange='updCand(this)'></td>"+
+    "<td><input data-i='"+i+"' data-f='trendPeak' type='number' value='"+(c.trendPeak==null?"":c.trendPeak)+"' onchange='updCand(this)'></td>"+
+    "<td><input data-i='"+i+"' data-f='points' type='number' value='"+(c.points==null?"":c.points)+"' onchange='updCand(this)'></td>"+
+    "<td>"+esc(c.result)+"</td></tr>";
+  }).join("")||"<tr><td colspan='13' class='muted'>先在 Step 1 发现候选词。</td></tr>";
+}
+function updCand(el){var c=candidates[Number(el.dataset.i)];c[el.dataset.f]=num(el.value);}
+function downloadTemplate(){
+  var csv="keyword,price,monthly_sales,rating,reviews,profit_margin_pct,trend_avg_search,trend_latest,trend_peak,data_points\ninsulated water bottle,24.99,3200,4.7,850,43.5,101277,0.6,202611,18\nstainless steel water bottle with handle,19.99,2900,4.8,810,42.2,101261,1.07,202611,60\n";
+  var blob=new Blob([csv],{type:"text/csv"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="selection-template.csv";a.click();URL.revokeObjectURL(a.href);
+}
+function importCSV(ev){
+  var f=ev.target.files[0];if(!f)return;var r=new FileReader();
+  r.onload=function(){var lines=String(r.result).split(/\r?\n/).filter(Boolean);if(lines.length<2){alert("CSV 没有数据行。");return;}
+  var head=lines[0].split(",").map(function(s){return s.trim();});
+  lines.slice(1).forEach(function(line){var cols=line.split(",").map(function(s){return s.trim();});var o={};head.forEach(function(h,i){o[h]=cols[i];});
+    var c=candidates.find(function(x){return x.kw.toLowerCase()===(o.keyword||"").toLowerCase();});
+    if(!c&&o.keyword){c=makeCand(o.keyword,"导入 Imported","中");candidates.push(c);}
+    if(!c)return;
+    c.price=num(o.price);c.sales=num(o.monthly_sales);c.rating=num(o.rating);c.reviews=num(o.reviews);c.margin=num(o.profit_margin_pct);c.trendAvg=num(o.trend_avg_search);c.trendLatest=num(o.trend_latest);c.trendPeak=num(o.trend_peak);c.points=num(o.data_points);
+  });renderCandTable();renderTrendProfit();alert("CSV 已导入 Imported.");};
+  r.readAsText(f);ev.target.value="";
+}
+function fillDemoData(){
+  if(!candidates.length){alert("先在 Step 1 发现候选词。");return;}
+  candidates.forEach(function(c){var d=DEMO_DATA[c.kw];if(d){Object.assign(c,{price:d.price,sales:d.sales,rating:d.rating,reviews:d.reviews,margin:d.margin,trendAvg:d.trendAvg,trendLatest:d.trendLatest,trendPeak:d.trendPeak,points:d.points});}});
+  renderCandTable();renderTrendProfit();
+  $("filterGate").innerHTML="<div class='warnbox'><b>演示数据已填入（仅 7 个词有数据）：</b>来源 2026-11-25 RexiFlow 报告快照。其中趋势数字在原站即疑似占位（7 词峰值全是 202,611），仅作格式演示，<b>不是真实搜索量</b>，不要用它做真实选品决定。</div>";
+}
+function evaluate(c){
+  var minP=num($("f_minPrice").value),maxP=num($("f_maxPrice").value),minS=num($("f_minSales").value),maxR=num($("f_maxReviews").value),minRa=num($("f_minRating").value),minM=num($("f_minMargin").value);
+  var missing=[];
+  if(c.price==null)missing.push("售价");if(c.sales==null)missing.push("月销量");if(c.rating==null)missing.push("评分");if(c.reviews==null)missing.push("评论数");if(c.margin==null)missing.push("利润率");
+  if(missing.length){c.result="数据不足";c.reason="缺少："+missing.join("、")+"；未填 = 未知，不通过。";return false;}
+  var fails=[];
+  if(c.price<minP||c.price>maxP)fails.push("售价 "+c.price+" 不在 "+minP+"–"+maxP);
+  if(c.sales<minS)fails.push("月销量 "+c.sales+" < "+minS);
+  if(c.reviews>maxR)fails.push("评论数 "+c.reviews+" > "+maxR);
+  if(c.rating<minRa)fails.push("评分 "+c.rating+" < "+minRa);
+  if(c.margin<minM)fails.push("利润率 "+c.margin+"% < "+minM+"%");
+  if(fails.length){c.result="淘汰";c.reason=fails.join("；");return false;}
+  c.result="通过";c.reason="六维全部达标。";return true;
+}
+function runFilter(){
+  if(!candidates.length){alert("先在 Step 1 发现候选词。");return;}
+  var retained=candidates.filter(evaluate);
+  var blank=candidates.filter(function(c){return c.price==null&&c.sales==null&&c.rating==null&&c.reviews==null&&c.margin==null;}).length;
+  var gate="";
+  if(blank===candidates.length){
+    gate="<div class='dangerbox'><b>⛔ 没有填任何数据 — 无法排名。No data entered — cannot rank.</b><br>20 个候选全部空白，六维初筛不能 20/20 通过。请输入真实数据（SellerSprite / Keepa / Amazon），或导入 CSV，或点“填入演示数据”看格式。原站 2026-11-25 就是在这里 20 进 20、淘汰 0，本站不允许这样。</div>";
+    $("filterGate").innerHTML=gate;$("filterOut").innerHTML="";$("selectPanel").innerHTML="";renderCandTable();return;
+  }
+  if(retained.length===0){
+    gate="<div class='dangerbox'><b>保留 0 个。</b>没有候选同时通过六维且数据齐全。请放宽参数或补数据。</div>";
+  } else if(retained.length===candidates.length){
+    gate="<div class='warnbox'><b>注意：保留 "+retained.length+" / "+candidates.length+"，淘汰 0。</b>原站也出现过这种情况，通常说明参数太宽或数据同质，请检查数据是否真实、是否有区分度。</div>";
+  } else {
+    gate="<div class='okbox'>六维初筛完成：保留 <b>"+retained.length+"</b> / "+candidates.length+"，淘汰 "+(candidates.length-retained.length)+"，数据不足 "+candidates.filter(function(c){return c.result==="数据不足";}).length+"。</div>";
+  }
+  $("filterGate").innerHTML=gate;
+  $("filterOut").innerHTML="<p>"+retained.map(function(c){return "<span class='kwchip'>"+esc(c.kw)+" ✓</span>";}).join("")+"</p>";
+  if(retained.length>8){
+    selected=[];
+    $("selectPanel").innerHTML="<div class='warnbox'><b>保留 "+retained.length+" 个 &gt; 8 个：</b>按原站分支规则，必须人工勾选 ≤8 个才能进入趋势验证。<div style='margin-top:8px'>"+retained.map(function(c,i){return "<label style='display:inline-block;margin:4px 12px 4px 0;font-weight:400'><input type='checkbox' class='selBox' value='"+esc(c.kw)+"' onchange='onSelect(this)'> "+esc(c.kw)+"</label>";}).join("")+"</div><button onclick='confirmSelection()'>确认选择 Confirm Selection</button> <span id='selMsg' class='small'></span></div>";
+  } else {
+    selected=retained.map(function(c){return c.kw;});
+    $("selectPanel").innerHTML="<div class='okbox'>保留 ≤8 个，直接进入 Step 3："+selected.map(esc).join("、")+"</div>";
+    renderTrendProfit();setPill(3);
+  }
+  renderCandTable();
+}
+function onSelect(el){
+  if(el.checked){if(selected.length>=8){el.checked=false;alert("最多选 8 个（原站规则）。");return;}selected.push(el.value);}
+  else{selected=selected.filter(function(k){return k!==el.value;});}
+}
+function confirmSelection(){
+  if(!selected.length){alert("请至少勾 1 个。");return;}
+  if(selected.length>8){alert("最多选 8 个。");return;}
+  $("selMsg").textContent="已确认 "+selected.length+" 个，进入 Step 3。";
+  renderTrendProfit();setPill(3);document.getElementById("step3").scrollIntoView({behavior:"smooth"});
+}
+function profitOf(c){
+  if(c.price==null||c.cost==null||c.fba==null||c.referral==null)return null;
+  var fee=c.price*c.referral/100;var net=c.price-c.cost-c.fba-fee;
+  return {net:Math.round(net*100)/100,margin:Math.round(net/c.price*1000)/10,be:Math.round((c.cost+c.fba+fee)*100)/100};
+}
+function renderTrendProfit(){
+  var list=candidates.filter(function(c){return selected.indexOf(c.kw)>=0;});
+  var tt=document.querySelector("#trendTable tbody");
+  tt.innerHTML=list.map(function(c){
+    var ok=c.trendAvg!=null&&c.trendLatest!=null;
+    return "<tr><td>"+esc(c.kw)+"</td><td>"+fmt(c.trendAvg)+"</td><td>"+fmt(c.trendLatest)+"</td><td>"+fmt(c.trendPeak)+"</td><td>"+fmt(c.points)+"</td><td>"+(ok?"<span class='badge b-pass'>有趋势数据</span>":"<span class='badge b-unknown'>趋势数据缺失</span>")+"</td></tr>";
+  }).join("")||"<tr><td colspan='6' class='muted'>先在 Step 2 完成初筛并确认 ≤8 个候选。</td></tr>";
+  var pt=document.querySelector("#profitTable tbody");
+  pt.innerHTML=list.map(function(c,i){
+    var p=profitOf(c);
+    return "<tr><td>"+esc(c.kw)+"</td><td>"+fmt(c.price)+"</td>"+
+    "<td><input data-kw='"+esc(c.kw)+"' data-f='cost' type='number' step='0.01' value='"+(c.cost==null?"":c.cost)+"' onchange='updProfit(this)'></td>"+
+    "<td><input data-kw='"+esc(c.kw)+"' data-f='fba' type='number' step='0.01' value='"+(c.fba==null?"":c.fba)+"' onchange='updProfit(this)'></td>"+
+    "<td><input data-kw='"+esc(c.kw)+"' data-f='referral' type='number' step='0.1' value='"+(c.referral==null?"":c.referral)+"' onchange='updProfit(this)'></td>"+
+    "<td>"+(p?("$"+p.net):"—")+"</td><td>"+(p?(p.margin+"%"):"—")+"</td><td>"+(p?("$"+p.be):"—")+"</td>"+
+    "<td>"+(p?"<span class='badge b-pass'>已测算</span>":"<span class='badge b-fail'>利润失败 / empty — 不排名</span>")+"</td></tr>";
+  }).join("")||"<tr><td colspan='9' class='muted'>先在 Step 2 完成初筛。</td></tr>";
+}
+function updProfit(el){var c=candidates.find(function(x){return x.kw===el.dataset.kw;});if(c){c[el.dataset.f]=num(el.value);renderTrendProfit();}}
+function fillDemoProfit(){
+  var any=false;
+  candidates.forEach(function(c){var d=DEMO_DATA[c.kw];if(d&&selected.indexOf(c.kw)>=0){c.cost=d.cost;c.fba=d.fba;c.referral=d.referral;any=true;}});
+  if(!any){alert("先在 Step 2 选出候选（演示数据只覆盖 7 个词）。");return;}
+  renderTrendProfit();
+}
+function verdict(c,p){
+  if(p==null||c.trendLatest==null)return null;
+  if(c.trendLatest>=1.0&&p.margin>=40)return ["推进","趋势最新 "+c.trendLatest+" ≥1.0 且利润率 "+p.margin+"% ≥40%"];
+  if(c.trendLatest>=0.8&&p.margin>=35)return ["推荐","趋势最新 "+c.trendLatest+" ≥0.8 且利润率 "+p.margin+"% ≥35%"];
+  return ["观望","有趋势+利润数据，但未达推进/推荐标准"];
+}
+function buildReport(){
+  if(!selected.length){alert("先在 Step 2 完成初筛并确认候选。");return;}
+  var name=$("researchName").value.trim()||($("kwInput").value.trim()+" 选品");
+  var date=new Date().toISOString().slice(0,10);
+  var ranked=[],insufficient=[];
+  selected.forEach(function(kw){
+    var c=candidates.find(function(x){return x.kw===kw;});if(!c)return;
+    var p=profitOf(c);
+    if(c.trendLatest==null||p==null){insufficient.push({c:c,p:p,why:(c.trendLatest==null?"缺趋势数据":"")+(c.trendLatest==null&&p==null?"、":"")+(p==null?"缺利润测算（成本/FBA/佣金未填）":"")});}
+    else{var v=verdict(c,p);ranked.push({c:c,p:p,v:v});}
+  });
+  ranked.sort(function(a,b){return (b.c.trendLatest-a.c.trendLatest)||(b.p.margin-a.p.margin)||((b.c.points||0)-(a.c.points||0));});
+  var risks=[];if($("risk_conc").checked)risks.push("头部集中（Hydro Flask / Stanley / Yeti 占大量份额）");if($("risk_pricewar").checked)risks.push("价格战风险（低价白牌涌入）");if($("risk_fba").checked)risks.push("FBA 费用波动");if($("risk_return").checked)risks.push("退货率（颜色偏差、保温性能不达标）");
+  var md="# "+name+" 选品研究报告\n\n- 日期 Date: "+date+" | 站点 Site: 美国 United States | 模式 FBA / 新店\n- 研究名称："+name+" | 关键词："+$("kwInput").value.trim()+"\n- 数据来源：使用者手工填入 / CSV 导入。本站无实时接口，不编数。\n\n## 1. 趋势验证结果\n\n| 候选词 | 趋势平均搜索量 | 最新趋势 | 峰值 | 数据点 |\n|---|---|---|---|---|\n";
+  var html="<h3>📊 "+esc(name)+" 选品研究报告</h3><p class='muted'>日期 "+date+" · 美国站 · FBA · 新店 · 数据由使用者填入，本站无实时接口。</p>";
+  html+="<h3>1. 趋势验证结果</h3><div class='tablewrap'><table><thead><tr><th>候选词</th><th>趋势平均搜索量</th><th>最新趋势</th><th>峰值</th><th>数据点</th></tr></thead><tbody>";
+  selected.forEach(function(kw){var c=candidates.find(function(x){return x.kw===kw;});if(!c)return;
+    md+="| "+c.kw+" | "+fmt(c.trendAvg)+" | "+fmt(c.trendLatest)+" | "+fmt(c.trendPeak)+" | "+fmt(c.points)+" |\n";
+    html+="<tr><td>"+esc(c.kw)+"</td><td>"+fmt(c.trendAvg)+"</td><td>"+fmt(c.trendLatest)+"</td><td>"+fmt(c.trendPeak)+"</td><td>"+fmt(c.points)+"</td></tr>";});
+  md+="\n## 2. 利润估算\n\n公式：净利 = 售价 − 产品成本 − FBA 费 − 售价 × 佣金比例。未计广告费、退货处理费、仓储超量费；实际运营净利率通常 25%-35%。\n\n| 候选词 | 售价 | 净利 | 利润率 | 盈亏平衡 |\n|---|---|---|---|---|\n";
+  html+="</tbody></table></div><h3>2. 利润估算</h3><p class='small'>公式：净利 = 售价 − 产品成本 − FBA 费 − 售价 × 佣金比例。未计广告费、退货处理费、仓储超量费；实际运营净利率通常 25%-35%。</p><div class='tablewrap'><table><thead><tr><th>候选词</th><th>售价</th><th>净利</th><th>利润率</th><th>盈亏平衡</th></tr></thead><tbody>";
+  selected.forEach(function(kw){var c=candidates.find(function(x){return x.kw===kw;});if(!c)return;var p=profitOf(c);
+    md+="| "+c.kw+" | "+fmt(c.price)+" | "+(p?("$"+p.net):"失败/empty")+" | "+(p?(p.margin+"%"):"—")+" | "+(p?("$"+p.be):"—")+" |\n";
+    html+="<tr><td>"+esc(c.kw)+"</td><td>"+fmt(c.price)+"</td><td>"+(p?("$"+p.net):"失败/empty")+"</td><td>"+(p?(p.margin+"%"):"—")+"</td><td>"+(p?("$"+p.be):"—")+"</td></tr>";});
+  md+="\n## 3. 竞争格局与风险\n\n"+(risks.length?risks.map(function(r){return "- "+r;}).join("\n"):"- （未勾选风险项）")+"\n"+($("riskNotes").value.trim()?"- 补充："+$("riskNotes").value.trim()+"\n":"");
+  html+="</tbody></table></div><h3>3. 竞争格局与风险</h3><ul>"+(risks.length?risks.map(function(r){return "<li>"+esc(r)+"</li>";}).join(""):"<li>（未勾选风险项）</li>")+($("riskNotes").value.trim()?"<li>补充："+esc($("riskNotes").value.trim())+"</li>":"")+"</ul>";
+  md+="\n## 4. 综合评估与推荐（仅排名趋势+利润都有数据的候选）\n\n";
+  html+="<h3>4. 综合评估与推荐</h3>";
+  if(ranked.length){
+    html+="<ol>"+ranked.map(function(r,i){return "<li><b>"+esc(r.c.kw)+"</b> — "+esc(r.v[0])+"："+esc(r.v[1])+"；净利 $"+r.p.net+"，利润率 "+r.p.margin+"%。</li>";}).join("")+"</ol>";
+    ranked.forEach(function(r,i){md+=(i+1)+". "+r.c.kw+" — "+r.v[0]+"："+r.v[1]+"；净利 $"+r.p.net+"，利润率 "+r.p.margin+"%。\n";});
+  } else {html+="<div class='dangerbox'><b>没有可排名的候选。</b>所有入选候选都缺趋势或利润数据，不能出“优先推进”结论。</div>";md+="没有可排名的候选：所有入选候选都缺趋势或利润数据。\n";}
+  if(insufficient.length){
+    html+="<h3>数据不足 — 不推进 Insufficient data — do not promote</h3><ul>"+insufficient.map(function(r){return "<li><b>"+esc(r.c.kw)+"</b>："+esc(r.why)+"</li>";}).join("")+"</ul>";
+    md+="\n## 数据不足 — 不推进\n\n"+insufficient.map(function(r){return "- "+r.c.kw+"："+r.why;}).join("\n")+"\n";
+  }
+  md+="\n## 诚信说明\n\n本站不接 SellerSprite / Keepa / Amazon 实时接口；趋势与利润数字全部来自使用者填入。2026-11-25 原站实测中产品搜索 8 次 0 结果、评论 0 条，趋势峰值全为 202,611（疑似占位），故本站设数据门禁：无数据不排名。\n";
+  html+="<p class='muted'>诚信说明：本站不接实时接口；无数据不排名。原站 2026-11-25 实测教训见首页诚信面板。</p>";
+  lastReportMd=md;$("reportOut").innerHTML=html;setPill(4);
+  document.getElementById("step4").scrollIntoView({behavior:"smooth"});
+}
+function copyReport(){if(!lastReportMd){alert("先生成报告。");return;}navigator.clipboard.writeText(lastReportMd).then(function(){alert("已复制 Copied.");},function(){alert("复制失败，请手动选中复制。");});}
+function downloadMarkdown(){
+  if(!lastReportMd){alert("先生成报告。");return;}
+  var blob=new Blob([lastReportMd],{type:"text/markdown"});var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="selection-report.md";a.click();URL.revokeObjectURL(a.href);
+}
+function getRuns(){try{return JSON.parse(localStorage.getItem(LS_RUNS)||"[]");}catch(e){return [];}}
+function saveRun(){
+  if(!lastReportMd){alert("先生成报告。");return;}
+  var runs=getRuns();runs.unshift({date:new Date().toISOString().slice(0,10),name:$("researchName").value.trim()||$("kwInput").value.trim(),keyword:$("kwInput").value.trim(),selected:selected.length,ranked:(lastReportMd.match(/^## 4\./m)?"见报告":"—")});
+  localStorage.setItem(LS_RUNS,JSON.stringify(runs.slice(0,50)));renderRuns();alert("已保存到本机运行记录 Saved.");
+}
+function renderRuns(){
+  var runs=getRuns();
+  $("runsOut").innerHTML=runs.length?("<table><thead><tr><th>日期</th><th>研究名称</th><th>关键词</th><th>入选数</th></tr></thead><tbody>"+runs.map(function(r){return "<tr><td>"+esc(r.date)+"</td><td>"+esc(r.name)+"</td><td>"+esc(r.keyword)+"</td><td>"+esc(r.selected)+"</td></tr>";}).join("")+"</tbody></table>"):"<p class='muted'>还没有保存的运行。</p>";
+}
+function clearRuns(){localStorage.removeItem(LS_RUNS);renderRuns();}
+loadProfile();renderRuns();
+</script>
+</body>
+</html>
